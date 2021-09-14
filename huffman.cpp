@@ -8,6 +8,7 @@
 #include<time.h>
 #include<map>
 #include<assert.h>
+#include<filesystem>
 
 using namespace std;
 typedef string codeT;
@@ -66,7 +67,6 @@ HuffmanNode* buildEncodingTree(const unordered_map<charT, int> &freqTable) {
 	for (auto[c, freq] : freqTable)
 		nodes.insert(new HuffmanNode(freq, c, true));
 
-
 	while (size(nodes) > 1) {
 		auto leftNode = *nodes.begin();
 		nodes.erase(nodes.begin());
@@ -95,15 +95,6 @@ unordered_map<charT, codeT> buildEncodingMap(HuffmanNode* encTree) {
 
 	traverse(encTree, "");
 	return encodingMap;
-}
-
-unordered_map<codeT, charT> buildDecodingMap(HuffmanNode* encTree) {
-	auto encodingMap = buildEncodingMap(encTree);
-	unordered_map<codeT, charT> decodingMap;
-	for (auto[c, code] : encodingMap)
-		decodingMap[code] = c;
-
-	return decodingMap;
 }
 
 inline void writeCode(obstream &out, const codeT &value) {
@@ -146,9 +137,7 @@ unordered_map<charT, int> readHeader(ibstream &input) {
 }
 
 void encodeData(ibstream &input, unordered_map<charT, codeT> &encodingMap, obstream &out) {
-	//encoding map should be serialized already
 	charT c;
-	int total = 0;
 	while (!input.eof()) {
 		c = input.readChar();
 		writeCode(out, encodingMap[c]);
@@ -157,28 +146,37 @@ void encodeData(ibstream &input, unordered_map<charT, codeT> &encodingMap, obstr
 	out.finish();
 }
 
-void decodeData(ibstream &input, unordered_map<codeT, charT> &decodingMap, obstream &out) {
+void decodeData(ibstream &input, HuffmanNode* node, obstream &out) {
+	HuffmanNode* root = node;
 	int b;
-	codeT curCode;
 
 	while (true) {
 		b = input.readBit();
 		if (b == -1)
 			break;
 
-		curCode += to_string(b);
-		if (decodingMap.count(curCode)) {
-			charT c = decodingMap[curCode];
-			if (c == TERM) {
-				curCode = "";
-				break;
+		if (b == 1) {
+			if (node->left)
+				node = node->left;
+			else {
+				if (node->c == TERM)
+					break;
+				out.writeChar(node->c);
+				node = root->left;
 			}
-			out.writeChar(decodingMap[curCode]);
-			curCode = "";
+		}
+		else {
+			if (node->right)
+				node = node->right;
+			else {
+				if (node->c == TERM)
+					break;
+				out.writeChar(node->c);
+				node = root->right;
+			}
 		}
 	}
 
-	assert(curCode == "");
 	out.finish();
 }
 
@@ -196,16 +194,15 @@ void compress(ibstream &input, obstream &out) {
 void decompress(ibstream &input, obstream &out) {
 	auto freqTable = readHeader(input);
 	auto tree = buildEncodingTree(freqTable);
-	auto decodingMap = buildDecodingMap(tree);
 
-	decodeData(input, decodingMap, out);
+	decodeData(input, tree, out);
 	freeTree(tree);
 }
 
 int main(int argc, char* argv[]) {
 
 	/*auto time = clock();
-	ibstream bin("picture.jpg");
+	ibstream bin("igor.txt");
 	obstream bout("result.huff");
 
 	compress(bin, bout);
@@ -215,22 +212,48 @@ int main(int argc, char* argv[]) {
 
 	/*auto time = clock();
 	ibstream bin("result.huff");
-	obstream bout("picture_result.jpg");
+	obstream bout("igor_enc.txt");
 
 	decompress(bin, bout);
 	cout << (double)(clock() - time) / 1000;*/
 
-	/*if (argc != 3 || argv[1] != "zip" || argv[1] != "unzip") {
+	string command, source, destination;
+	if (argc != 4 || (command = argv[1]) != "zip" && (command = argv[1]) != "unzip") {
 		cout << "Syntax:" << endl;
 		cout << "huffman.exe zip <source file> <destination file>" << endl;
 		cout << "huffman.exe unzip <source file> <destination file>" << endl;
-		cout << "example: huffmax.exe zip text.txt text.huff"<<endl;
+		cout << "example: huffmax.exe zip text.txt text.huff" << endl;
+		return -1;
 	}
 
-	if (argv[1] == "zip") {
+	if (command == "zip") {
+		source = argv[2];
+		destination = argv[3];
+		if (!filesystem::exists(source)) {
+			cout << "source file doesn't exist" << endl;
+			return -1;
+		}
 
+		auto start_time = clock();
+		cout << "Compression started..." << endl;
+		ibstream bin(source);
+		obstream bout(destination);
+		compress(bin, bout);
+		cout << "Compression took: " << fixed << setprecision(3) << (double)(clock() - start_time) / 1000 << "s." << endl;
 	}
 	else {
-
-	}*/
+		source = argv[2];
+		destination = argv[3];
+		if (!filesystem::exists(source)) {
+			cout << "source file doesn't exist" << endl;
+			return -1;
+		}
+		auto start_time = clock();
+		cout << "Decompression started..." << endl;
+		ibstream bin(source);
+		obstream bout(destination);
+		decompress(bin, bout);
+		cout << "Decompression took: " << fixed << setprecision(3) << (double)(clock() - start_time) / 1000 << "s." << endl;
+	}
+	return 0;
 }
